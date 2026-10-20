@@ -124,6 +124,11 @@ async function readJson<T>(response: Response, source?: string): Promise<T> {
   return result;
 }
 
+async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function loadError(cause: unknown, source: string, fallback: string) {
   const message = cause instanceof Error ? cause.message : fallback;
   return message.startsWith(`${source} `) ? message : `${source}: ${message || fallback}`;
@@ -598,6 +603,18 @@ export function StudentWorkspace() {
     setError('');
     setNotice('');
     try {
+      const selectedFiles = new Map<string, string>();
+      for (const [requirementId, file] of Object.entries(applicationFiles)) {
+        const digest = await sha256File(file);
+        const priorRequirementId = selectedFiles.get(digest);
+        if (priorRequirementId) {
+          const priorName = programRequirements.find((requirement) => requirement.id === priorRequirementId)?.name ?? 'another requirement';
+          const currentName = programRequirements.find((requirement) => requirement.id === requirementId)?.name ?? 'this requirement';
+          throw new Error(`The same file is selected for "${priorName}" and "${currentName}". Choose a separate file for each document requirement.`);
+        }
+        selectedFiles.set(digest, requirementId);
+      }
+
       let application = createdApplication;
       if (!application) {
         const result = await readJson<{ application: { id: string; application_no: string; status: string }; possibleConflict: boolean }>(
@@ -609,6 +626,7 @@ export function StudentWorkspace() {
               ...(isAcademic(applyProgram) ? { gwa: Number(gwa), lowest_grade: Number(lowestGrade) } : {}),
             }),
           }),
+          'Application record creation',
         );
         application = result.application;
         setCreatedApplication(application);
@@ -617,16 +635,16 @@ export function StudentWorkspace() {
       const uploadFailures: string[] = [];
       for (const [requirementId, file] of Object.entries(applicationFiles)) {
         if (uploadedApplicationFiles[requirementId]) continue;
+        const requirementName = programRequirements.find((requirement) => requirement.id === requirementId)?.name ?? file.name;
         const form = new FormData();
         form.set('application_id', application.id);
         form.set('requirement_id', requirementId);
         form.set('file', file);
         try {
-          await readJson(await fetch('/api/documents', { method: 'POST', body: form }));
+          await readJson(await fetch('/api/documents', { method: 'POST', body: form }), `Upload "${requirementName}"`);
           setUploadedApplicationFiles((current) => ({ ...current, [requirementId]: true }));
         } catch (cause) {
-          const name = programRequirements.find((requirement) => requirement.id === requirementId)?.name ?? file.name;
-          uploadFailures.push(`${name}: ${cause instanceof Error ? cause.message : 'Upload failed.'}`);
+          uploadFailures.push(`${requirementName}: ${cause instanceof Error ? cause.message : 'Upload failed.'}`);
         }
       }
       if (uploadFailures.length) {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiRole } from '@/lib/auth/permissions';
 import { dbError, jsonError, parseWith } from '@/lib/api';
@@ -69,11 +70,29 @@ export async function POST(request: NextRequest) {
   }
 
   let storagePath: string | null = null;
+  let fileSha256: string | null = null;
   if (hasFile) {
     if (file.size > maxUploadBytes) return jsonError(`File is too large. The limit is ${Math.floor(maxUploadBytes / 1024 / 1024 * 10) / 10} MB.`, 413);
     if (!acceptedTypes.includes(file.type)) return jsonError('This file type is not accepted for the selected requirement.', 415);
     if (!ALLOWED_UPLOAD_TYPES.some((allowedType) => allowedType === file.type)) {
       return jsonError('This file type is not supported by secure storage.', 415);
+    }
+    fileSha256 = createHash('sha256').update(Buffer.from(await file.arrayBuffer())).digest('hex');
+    const { data: duplicate, error: duplicateError } = await auth.ctx.supabase
+      .from('application_documents')
+      .select('id,requirement_id,review_status')
+      .eq('application_id', parsed.data.application_id)
+      .eq('file_sha256', fileSha256)
+      .maybeSingle();
+    if (duplicateError) return dbError(duplicateError, 'POST /api/documents: check duplicate document content');
+    if (duplicate) {
+      if (duplicate.requirement_id !== parsed.data.requirement_id) {
+        return jsonError('This file is already attached to another document requirement. Choose a separate file for each requirement.', 409);
+      }
+      if (duplicate.review_status === 'PENDING' || duplicate.review_status === 'ACCEPTED') {
+        return NextResponse.json({ id: duplicate.id, reused: true });
+      }
+      return jsonError('This document was not accepted. Choose a corrected file before uploading it again.', 409);
     }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80);
     storagePath = `${parsed.data.application_id}/${crypto.randomUUID()}-${safeName}`;
@@ -97,13 +116,16 @@ export async function POST(request: NextRequest) {
     storage_path: storagePath,
     mime_type: hasFile ? file.type : null,
     file_size: hasFile ? file.size : null,
+    file_sha256: fileSha256,
     created_by: auth.ctx.profile.id,
   }).select('id').single();
-
   if (error) {
     if (storagePath) {
       const { error: cleanupError } = await auth.ctx.supabase.storage.from(DOCUMENT_BUCKET).remove([storagePath]);
       if (cleanupError) console.error('Orphaned application document cleanup failed:', cleanupError.message);
+    }
+    if (error.code === '23505' && error.message.includes('application_documents_application_file_sha256_unique')) {
+      return jsonError('This file is already attached to another document requirement. Choose a separate file for each requirement.', 409);
     }
     return dbError(error, 'POST /api/documents: insert document metadata and return its reference');
   }

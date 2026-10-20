@@ -41,6 +41,8 @@ When repairing an existing deployment, first verify that the Supabase Dashboard 
 
 After the complete role-expansion schema is installed, apply `supabase/working-scholar-opportunity-access.sql` to grant the Working Scholar Admin role access only to Working Scholar program records, enforce one active application per student/program, and add optional per-opportunity `max_slots`. It aborts without deleting data if prerequisites are missing or existing duplicate active applications need review. Working Scholar opportunities are managed from Slot Management; per-opportunity limits and publish state use `scholarship_programs`, and the existing schoolwide `slot_settings` remains an overall cap and controls whether applications are open. A program with no configured limit uses the shared cap. Occupied slots continue to mean activated scholars, matching the existing approval/activation rules; pending applications do not occupy slots.
 
+Then apply `supabase/student-application-access.sql`. This migration is required for student submissions: it replaces the base admin-only insert policies with narrowly scoped policies for an authenticated student's own pending application and documents, and restricts document storage to that application owner. Do not substitute broader grants or disable row-level security. Confirm that the migration is applied to the same Supabase project configured by `NEXT_PUBLIC_SUPABASE_URL`.
+
 ## Create the four real Supabase accounts
 
 There are no hard-coded passwords. Set `SETUP_EMAIL_DOMAIN=student.local` and private initial passwords of at least 12 characters in `.env.local`. Unless email overrides are set, the script provisions these Auth users:
@@ -101,6 +103,27 @@ Student application drafts are saved in that browser's local storage until submi
 | `Email or password is incorrect` | Supabase intentionally uses a generic response for an unknown user or wrong password. Check that the account is in this exact project, confirmed, and using the current password. |
 | `profiles` returns `PGRST205` or 404 | Run `supabase/schema.sql` and then `supabase/role-expansion.sql` in the project matching `.env.local`; refresh the Supabase API schema cache if needed. |
 | Student portal reports scholarship/application database errors or missing `scholarship_programs`, program metadata, `application_requirement_snapshots`, `application_type`, `student_user_id`, or the student slot summary | Apply `supabase/schema.sql` and then `supabase/role-expansion.sql` to the Supabase project configured in `.env.local`, and refresh its API schema cache. Verify the project URL before applying migrations. These schema objects are required by student opportunity and application queries; do not work around this by disabling RLS. |
+| Student application submission returns HTTP 403 | Check the server log's `Database authorization denied` entry for the operation, SQLSTATE, message, details, and hint. The student application route uses the signed-in user's cookie-backed Supabase client and gets ownership from the active `profiles.id` matching `auth.uid()`; it does not trust a browser-supplied student ID. The base schema intentionally permits only staff to insert applications. Apply `supabase/student-application-access.sql` after the complete role-expansion and Working Scholar opportunity migrations in the same Supabase project configured by `NEXT_PUBLIC_SUPABASE_URL`. A local SQL file does not update the hosted database. |
+
+To verify the migration in Supabase SQL Editor, first confirm that the dashboard project reference matches `NEXT_PUBLIC_SUPABASE_URL`, then run this read-only check:
+
+```sql
+select
+  has_table_privilege('authenticated', 'public.working_scholar_applications', 'INSERT') as authenticated_can_insert_applications,
+  has_sequence_privilege('authenticated', 'public.application_no_seq', 'USAGE') as authenticated_can_use_application_number_sequence,
+  exists (
+    select 1
+      from pg_policies
+     where schemaname = 'public'
+       and tablename = 'working_scholar_applications'
+       and policyname = 'apps_insert'
+       and cmd = 'INSERT'
+       and 'authenticated' = any(roles)
+       and with_check like '%student_user_id%auth.uid%'
+  ) as owner_scoped_student_insert_policy_present;
+```
+
+All three results should be `true`. This confirms the table grant, sequence access, and presence of the expected owner-scoped policy; it does not substitute for an end-to-end student submission test. If any result is `false`, apply the migration above to that project, confirm it completes, and rerun the check. For a complete verification, submit an eligible application while signed in as a Student, then verify the resulting row has `student_user_id = auth.uid()` and `status = 'PENDING'`; also confirm unauthenticated submissions return 401 and a student cannot insert a row for another profile.
 | Login opens the wrong role portal | Sign out, confirm the intended email/account, and sign in again. The destination comes from the active `profiles` row whose `id` matches the authenticated Supabase user. Ask an authorized administrator to correct an erroneous profile role; do not edit Auth metadata to impersonate a role. |
 | User has no profile | Run `npm run provision:accounts` after applying both SQL files. |
 | `SUPABASE_SERVICE_ROLE_KEY` missing | Add it privately to `.env.local`; never use a `NEXT_PUBLIC_` variable for it. |

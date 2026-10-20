@@ -60,6 +60,26 @@ begin
   end if;
 end $$;
 
+alter table public.application_documents
+  add column if not exists file_sha256 text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.application_documents'::regclass
+       and conname = 'application_documents_file_sha256_format_check'
+  ) then
+    alter table public.application_documents
+      add constraint application_documents_file_sha256_format_check
+      check (file_sha256 is null or file_sha256 ~ '^[0-9a-f]{64}$');
+  end if;
+end $$;
+
+create unique index if not exists application_documents_application_file_sha256_unique
+  on public.application_documents (application_id, file_sha256)
+  where file_sha256 is not null;
+
 create or replace function public.is_student()
 returns boolean
 language sql stable security definer set search_path = public as $$

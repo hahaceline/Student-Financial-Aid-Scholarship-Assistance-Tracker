@@ -68,6 +68,7 @@ create table if not exists public.application_documents (
   storage_path text,
   mime_type text,
   file_size bigint check (file_size is null or file_size >= 0),
+  file_sha256 text,
   review_status text not null default 'PENDING'
     check (review_status in ('PENDING','ACCEPTED','REJECTED','NEEDS_CORRECTION')),
   review_remarks text,
@@ -75,10 +76,15 @@ create table if not exists public.application_documents (
   reviewed_at timestamptz,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint application_documents_file_sha256_format_check
+    check (file_sha256 is null or file_sha256 ~ '^[0-9a-f]{64}$')
 );
 create index if not exists app_docs_app_idx on public.application_documents (application_id);
 create index if not exists app_docs_review_idx on public.application_documents (review_status);
+create unique index if not exists application_documents_application_file_sha256_unique
+  on public.application_documents (application_id, file_sha256)
+  where file_sha256 is not null;
 
 create table if not exists public.application_document_reviews (
   id uuid primary key default gen_random_uuid(),

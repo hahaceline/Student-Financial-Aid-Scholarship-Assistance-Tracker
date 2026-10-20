@@ -30,9 +30,35 @@ export async function parseJson<T>(request: Request, schema: ZodType<T, ZodTypeD
   return parseWith(raw, schema);
 }
 
+type DatabaseError = {
+  code?: string;
+  message: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function safeDiagnostic(value: string | null | undefined) {
+  return value
+    ?.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted-email]')
+    .replace(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi, '[redacted-id]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted-token]')
+    ?? null;
+}
+
+function logDatabaseError(label: string, error: DatabaseError, operation?: string) {
+  console.error(label, {
+    operation: operation ?? 'unclassified database operation',
+    sqlstate: error.code ?? null,
+    message: safeDiagnostic(error.message),
+    details: safeDiagnostic(error.details),
+    hint: safeDiagnostic(error.hint),
+  });
+}
+
 // Maps Postgres/PostgREST errors to safe HTTP responses. Messages raised by our own
 // SQL functions (P0001) are written for end users; everything else stays generic.
-export function dbError(error: { code?: string; message: string }, operation?: string) {
+export function dbError(error: DatabaseError, operation?: string) {
   switch (error.code) {
     case '42P01':
     case '42883':
@@ -41,18 +67,14 @@ export function dbError(error: { code?: string; message: string }, operation?: s
     case 'PGRST202':
     case 'PGRST204':
     case 'PGRST205':
-      console.error('Required database schema is missing:', error.code, error.message);
+      logDatabaseError('Required database schema is missing:', error, operation);
       return jsonError('Scholarship database setup is incomplete. Apply supabase/schema.sql and supabase/role-expansion.sql, then refresh the Supabase API schema cache.', 503);
     case 'PGRST301':
     case 'PGRST302':
       return jsonError('Your sign-in session is no longer valid. Please sign in again.', 401);
     case '42501':
-      console.error('Database authorization denied:', {
-        operation: operation ?? 'unclassified database operation',
-        sqlstate: error.code,
-        message: error.message,
-      });
-      return jsonError('You do not have permission to perform this action.', 403);
+      logDatabaseError('Database authorization denied:', error, operation);
+      return jsonError('This account is not authorized to submit this application. If you are a student and this continues, ask an administrator to verify that supabase/student-application-access.sql was applied to the configured Supabase project.', 403);
     case 'P0002':
       return jsonError(error.message, 404);
     case 'P0001':
@@ -65,7 +87,7 @@ export function dbError(error: { code?: string; message: string }, operation?: s
     case '22P02':
       return jsonError('Some of the submitted values are not valid.', 422);
     default:
-      console.error('Database error:', error.code, error.message);
+      logDatabaseError('Database error:', error, operation);
       return jsonError('A database error occurred. Please try again.', 500);
   }
 }
