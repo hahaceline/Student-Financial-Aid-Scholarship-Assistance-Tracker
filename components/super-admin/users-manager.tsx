@@ -8,13 +8,15 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Badge } from '@/components/dashboard/status-badge';
 import { api } from '@/lib/client-api';
 import { formatDate } from '@/lib/utils';
-import { ROLE_LABELS, type Profile } from '@/lib/types';
+import { ROLE_LABELS, type AdminRole, type Profile } from '@/lib/types';
+
+type AssignableRole = Exclude<AdminRole, 'SUPER_ADMIN'>;
 
 export function UsersManager({ users, currentUserId }: { users: Profile[]; currentUserId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'invite' | 'password'>('invite');
-  const [role, setRole] = useState<'WORKING_SCHOLAR_ADMIN' | 'FINANCE_ADMIN' | 'STUDENT'>('WORKING_SCHOLAR_ADMIN');
+  const [role, setRole] = useState<AssignableRole>('WORKING_SCHOLAR_ADMIN');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -88,6 +90,7 @@ export function UsersManager({ users, currentUserId }: { users: Profile[]; curre
           <div><label className="label" htmlFor="email">Email</label><input id="email" name="email" type="email" required className="input" /></div>
           <div><label className="label" htmlFor="role">Role</label>
             <select id="role" className="input" value={role} onChange={(event) => setRole(event.target.value as typeof role)}>
+              <option value="ACADEMIC_ADMIN">Academic Admin</option>
               <option value="WORKING_SCHOLAR_ADMIN">Working Scholar Admin</option>
               <option value="FINANCE_ADMIN">Finance Admin</option>
               <option value="STUDENT">Student</option>

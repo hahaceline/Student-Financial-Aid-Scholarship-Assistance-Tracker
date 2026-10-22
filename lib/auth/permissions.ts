@@ -6,18 +6,14 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseEnv } from '@/lib/env';
 import { jsonError } from '@/lib/api';
+import { ROLE_HOME } from '@/lib/role-config';
 import type { AdminRole, Profile } from '@/lib/types';
 
-export const ROLE_HOME: Record<AdminRole, string> = {
-  SUPER_ADMIN: '/super-admin/dashboard',
-  WORKING_SCHOLAR_ADMIN: '/working-scholar/dashboard',
-  FINANCE_ADMIN: '/finance/dashboard',
-  STUDENT: '/student/dashboard',
-};
+export { ROLE_HOME } from '@/lib/role-config';
 
 export function isAdminRole(v: unknown): v is AdminRole {
-  return v === 'SUPER_ADMIN' || v === 'WORKING_SCHOLAR_ADMIN'
-    || v === 'FINANCE_ADMIN' || v === 'STUDENT';
+  return v === 'SUPER_ADMIN' || v === 'ACADEMIC_ADMIN'
+    || v === 'WORKING_SCHOLAR_ADMIN' || v === 'FINANCE_ADMIN' || v === 'STUDENT';
 }
 
 export interface AdminContext {
@@ -50,7 +46,9 @@ export async function requireRole(roles: AdminRole | AdminRole[]): Promise<Admin
   const ctx = await getCurrentAdmin();
   if (!ctx) redirect('/login?error=unauthorized');
   if (ctx.user.app_metadata?.require_password_change === true) redirect('/reset-password');
-  if (!allowed.includes(ctx.profile.role)) redirect(ROLE_HOME[ctx.profile.role]);
+  if (!allowed.includes(ctx.profile.role)) {
+    redirect(ROLE_HOME[ctx.profile.role]);
+  }
   return ctx;
 }
 

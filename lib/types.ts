@@ -1,9 +1,15 @@
 import type { ApplicationStatus, DocumentReviewStatus } from '@/lib/status';
 
-export type AdminRole = 'SUPER_ADMIN' | 'WORKING_SCHOLAR_ADMIN' | 'FINANCE_ADMIN' | 'STUDENT';
+export type AdminRole =
+  | 'SUPER_ADMIN'
+  | 'ACADEMIC_ADMIN'
+  | 'WORKING_SCHOLAR_ADMIN'
+  | 'FINANCE_ADMIN'
+  | 'STUDENT';
 
 export const ROLE_LABELS: Record<AdminRole, string> = {
   SUPER_ADMIN: 'Super Admin',
+  ACADEMIC_ADMIN: 'Academic Admin',
   WORKING_SCHOLAR_ADMIN: 'Working Scholar Admin',
   FINANCE_ADMIN: 'Finance Admin',
   STUDENT: 'Student',

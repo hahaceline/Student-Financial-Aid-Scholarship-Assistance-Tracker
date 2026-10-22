@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BarChart3, Bell, CircleHelp, ClipboardCheck, FileText, Gauge, GraduationCap, LayoutDashboard, LogOut,
-  MessageSquareWarning, UserCircle, Users, X, type LucideIcon,
+  BarChart3, Bell, BookOpenCheck, CalendarDays, CircleHelp, ClipboardCheck, FileText, Gauge, GraduationCap,
+  LayoutDashboard, LogOut, MessageSquareWarning, Settings2, UserCircle, Users, X, type LucideIcon,
 } from 'lucide-react';
 import { logoutAction } from '@/lib/auth/actions';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,20 @@ const NAV: Record<AdminRole, NavItem[]> = {
     { href: '/super-admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/super-admin/programs', label: 'Scholarship Programs', icon: GraduationCap },
     { href: '/super-admin/users', label: 'User Management', icon: Users },
+  ],
+  ACADEMIC_ADMIN: [
+    { href: '/academic/dashboard', label: 'Academic Dashboard', icon: LayoutDashboard },
+    { href: '/academic/applications', label: 'Applications', icon: FileText },
+    { href: '/academic/requirements', label: 'Requirements', icon: ClipboardCheck },
+    { href: '/academic/eligibility', label: 'Eligibility Review', icon: BookOpenCheck },
+    { href: '/academic/examinations', label: 'Examinations', icon: CalendarDays },
+    { href: '/academic/grade-monitoring', label: 'Grade Monitoring', icon: GraduationCap },
+    { href: '/academic/enrollment', label: 'Enrollment', icon: Users },
+    { href: '/academic/scholars', label: 'Scholars', icon: GraduationCap },
+    { href: '/academic/conflicts', label: 'Conflict Review', icon: MessageSquareWarning },
+    { href: '/academic/feedback', label: 'Student Feedback', icon: Bell },
+    { href: '/academic/reports', label: 'Reports', icon: BarChart3 },
+    { href: '/academic/settings', label: 'Settings', icon: Settings2 },
   ],
   WORKING_SCHOLAR_ADMIN: [
     { href: '/working-scholar/dashboard', label: 'Dashboard', icon: LayoutDashboard },

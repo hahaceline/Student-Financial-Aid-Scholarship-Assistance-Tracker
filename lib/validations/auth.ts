@@ -20,7 +20,7 @@ export const adminUserCreateSchema = z
   .object({
     full_name: z.string().trim().min(2, 'Full name is required').max(120),
     email: z.string().trim().toLowerCase().email('Enter a valid email address').max(200),
-    role: z.enum(['WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'STUDENT']),
+    role: z.enum(['ACADEMIC_ADMIN', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'STUDENT']),
     mode: z.enum(['invite', 'password']),
     password: z.string().max(72).optional(),
   })

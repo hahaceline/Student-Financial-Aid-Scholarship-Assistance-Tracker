@@ -7,7 +7,7 @@ import { isUuid } from '@/lib/utils';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_request: NextRequest, { params }: Ctx) {
-  const auth = await requireApiRole(['WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'STUDENT']);
+  const auth = await requireApiRole(['WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'STUDENT']);
   if (auth.error) return auth.error;
   const { id } = await params;
   if (!isUuid(id)) return jsonError('Application not found.', 404);
@@ -39,7 +39,46 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
     if (error) return dbError(error);
     activeScholar = data?.participation_status === 'ACTIVE';
   }
-  return NextResponse.json({ application: app.data, requirements: requirements ?? [], documents: docs.data ?? [], followUps: followUps.data ?? [], history: history.data ?? [], activeScholar });
+  let academic = null;
+  if (auth.ctx.profile.role === 'STUDENT' && app.data.application_type === 'ACADEMIC') {
+    const [assessment, examination] = await Promise.all([
+      supabase.from('academic_eligibility_reviews').select('result,gwa,remarks,reviewed_at').eq('application_id', id).maybeSingle(),
+      supabase.from('academic_examinations').select('scheduled_at,location,status,remarks').eq('application_id', id).maybeSingle(),
+    ]);
+    if (assessment.error) return dbError(assessment.error);
+    if (examination.error) return dbError(examination.error);
+    const { data: scholarship, error: scholarshipError } = await supabase.from('academic_scholarships')
+      .select('id,status,started_at,ended_at,end_reason').eq('application_id', id).maybeSingle();
+    if (scholarshipError) return dbError(scholarshipError);
+    let gradeReviews: unknown[] = [];
+    let enrollments: unknown[] = [];
+    let award: unknown = null;
+    if (scholarship) {
+      const [gradesResult, enrollmentResult, awardResult] = await Promise.all([
+        supabase.from('academic_grade_reviews').select('academic_year,semester,gwa,status,remarks')
+          .eq('scholarship_id', scholarship.id).order('academic_year', { ascending: false }),
+        supabase.from('academic_enrollment_verifications').select('academic_year,semester,status,remarks')
+          .eq('scholarship_id', scholarship.id).order('academic_year', { ascending: false }),
+        supabase.from('academic_notices_of_award').select('id,terms_version,terms_text,issued_at,acknowledged_at')
+          .eq('scholarship_id', scholarship.id).maybeSingle(),
+      ]);
+      if (gradesResult.error) return dbError(gradesResult.error);
+      if (enrollmentResult.error) return dbError(enrollmentResult.error);
+      if (awardResult.error) return dbError(awardResult.error);
+      gradeReviews = gradesResult.data ?? [];
+      enrollments = enrollmentResult.data ?? [];
+      award = awardResult.data;
+    }
+    academic = {
+      assessment: assessment.data,
+      examination: examination.data,
+      scholarship,
+      gradeReviews,
+      enrollments,
+      award,
+    };
+  }
+  return NextResponse.json({ application: app.data, requirements: requirements ?? [], documents: docs.data ?? [], followUps: followUps.data ?? [], history: history.data ?? [], activeScholar, academic });
 }
 
 export async function PATCH(request: NextRequest, { params }: Ctx) {

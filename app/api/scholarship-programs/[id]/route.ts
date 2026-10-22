@@ -5,7 +5,7 @@ import { dbError, jsonError } from '@/lib/api';
 type Context = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: NextRequest, { params }: Context) {
-  const auth = await requireApiRole(['SUPER_ADMIN', 'WORKING_SCHOLAR_ADMIN']);
+  const auth = await requireApiRole(['SUPER_ADMIN', 'ACADEMIC_ADMIN', 'WORKING_SCHOLAR_ADMIN']);
   if (auth.error) return auth.error;
   const { id } = await params;
   const { data: existingProgram, error: existingProgramError } = await auth.ctx.supabase
@@ -17,6 +17,9 @@ export async function PATCH(request: NextRequest, { params }: Context) {
   if (!existingProgram) return jsonError('Scholarship program not found.', 404);
   if (auth.ctx.profile.role === 'WORKING_SCHOLAR_ADMIN' && existingProgram.application_type !== 'WORKING_SCHOLAR') {
     return jsonError('Working Scholar Admin can only manage Working Scholar programs.', 403);
+  }
+  if (auth.ctx.profile.role === 'ACADEMIC_ADMIN' && existingProgram.application_type !== 'ACADEMIC') {
+    return jsonError('Academic Admin can only manage Academic Scholarship programs.', 403);
   }
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return jsonError('Invalid JSON body.', 400); }
@@ -42,6 +45,14 @@ export async function PATCH(request: NextRequest, { params }: Context) {
   }
   if (body.is_active !== undefined) {
     if (typeof body.is_active !== 'boolean') return jsonError('Program active state must be a boolean.', 400);
+    if (body.is_active && existingProgram.application_type === 'ACADEMIC') {
+      const { count, error: requirementsError } = await auth.ctx.supabase.from('document_requirements')
+        .select('id', { count: 'exact', head: true })
+        .eq('application_type', 'ACADEMIC').eq('is_required', true).eq('is_active', true)
+        .or(`program_id.is.null,program_id.eq.${id}`);
+      if (requirementsError) return dbError(requirementsError);
+      if (!count) return jsonError('Configure at least one active, required Academic document before opening applications.', 409);
+    }
     changes.is_active = body.is_active;
   }
   if (body.max_slots !== undefined) {

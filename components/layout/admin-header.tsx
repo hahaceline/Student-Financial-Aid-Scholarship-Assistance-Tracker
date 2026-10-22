@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Bell, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Search, UserRound, X } from 'lucide-react';
 import { logoutAction } from '@/lib/auth/actions';
+import { ROLE_HOME } from '@/lib/role-config';
 import { ROLE_LABELS, type AdminRole } from '@/lib/types';
 
 type QuickLink = { label: string; href: string; description: string };
@@ -14,6 +15,9 @@ const WORKSPACE_LINKS: Record<AdminRole, QuickLink[]> = {
     { label: 'Dashboard', href: '/super-admin/dashboard', description: 'System overview' },
     { label: 'Scholarship programs', href: '/super-admin/programs', description: 'Manage available programs' },
     { label: 'User management', href: '/super-admin/users', description: 'Manage accounts and roles' },
+  ],
+  ACADEMIC_ADMIN: [
+    { label: 'Dashboard', href: '/academic/dashboard', description: 'Academic Scholarship overview' },
   ],
   WORKING_SCHOLAR_ADMIN: [
     { label: 'Dashboard', href: '/working-scholar/dashboard', description: 'Program overview and recent activity' },
@@ -42,10 +46,7 @@ const WORKSPACE_LINKS: Record<AdminRole, QuickLink[]> = {
 };
 
 function dashboardHref(role: AdminRole) {
-  if (role === 'SUPER_ADMIN') return '/super-admin/dashboard';
-  if (role === 'WORKING_SCHOLAR_ADMIN') return '/working-scholar/dashboard';
-  if (role === 'FINANCE_ADMIN') return '/finance/dashboard';
-  return '/student/dashboard';
+  return ROLE_HOME[role];
 }
 
 function profileHref(role: AdminRole) {

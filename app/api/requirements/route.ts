@@ -5,11 +5,11 @@ import { requirementCreateSchema, requirementUpdateSchema } from '@/lib/validati
 import { isUuid } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
-  const auth = await requireApiRole(['STUDENT', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN']);
+  const auth = await requireApiRole(['STUDENT', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN']);
   if (auth.error) return auth.error;
   const type = request.nextUrl.searchParams.get('application_type');
   const programId = request.nextUrl.searchParams.get('program_id');
-  if (type !== 'WORKING_SCHOLAR' && type !== 'FINANCIAL_AID' && type !== null) {
+  if (type !== 'WORKING_SCHOLAR' && type !== 'FINANCIAL_AID' && type !== 'ACADEMIC' && type !== null) {
     return jsonError('Choose a valid application type.', 400);
   }
   if (programId && !isUuid(programId)) return jsonError('Choose a valid scholarship program.', 400);

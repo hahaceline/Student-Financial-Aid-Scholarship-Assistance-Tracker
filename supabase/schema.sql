@@ -9,7 +9,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
   full_name text not null,
-  role text not null check (role in ('SUPER_ADMIN', 'WORKING_SCHOLAR_ADMIN')),
+  role text not null check (role in ('SUPER_ADMIN', 'ACADEMIC_ADMIN', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'STUDENT')),
   is_active boolean not null default true,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),

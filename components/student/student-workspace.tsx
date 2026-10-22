@@ -9,7 +9,7 @@ import {
   ShieldCheck, Sparkles, UserRound, X,
 } from 'lucide-react';
 
-type ProgramType = 'WORKING_SCHOLAR' | 'FINANCIAL_AID';
+type ProgramType = 'WORKING_SCHOLAR' | 'FINANCIAL_AID' | 'ACADEMIC';
 type ScholarshipCategory = 'ACADEMIC' | 'WORKING_SCHOLAR' | 'SPORTS_ATHLETICS' | 'GAD' | 'OTHER_INTERNAL';
 type OpportunityStatus = 'Open' | 'Closing Soon' | 'Upcoming' | 'Full' | 'Closed';
 type EligibilityStatus = 'Eligible' | 'Not Eligible' | 'Check Requirements';
@@ -81,6 +81,14 @@ type Application = {
 type Profile = { id: string; email: string; full_name: string };
 type HistoryEntry = { id: string; from_status: string | null; to_status: string; reason: string | null; created_at: string };
 type FollowUp = { id: string; message: string; status: string; created_at: string };
+type AcademicStudentDetail = {
+  assessment: { result: string; gwa: number | null; remarks: string | null; reviewed_at: string | null } | null;
+  examination: { scheduled_at: string | null; location: string | null; status: string; remarks: string | null } | null;
+  scholarship: { status: string; started_at: string; ended_at: string | null; end_reason: string | null } | null;
+  gradeReviews: { academic_year: string; semester: string; gwa: number | null; status: string; remarks: string | null }[];
+  enrollments: { academic_year: string; semester: string; status: string; remarks: string | null }[];
+  award: { id: string; terms_version: string; terms_text: string; issued_at: string; acknowledged_at: string | null } | null;
+};
 type ApplicationDetail = {
   application: Application;
   requirements: ApplicationRequirement[];
@@ -88,6 +96,7 @@ type ApplicationDetail = {
   history: HistoryEntry[];
   followUps: FollowUp[];
   activeScholar?: boolean;
+  academic?: AcademicStudentDetail | null;
 };
 
 const DRAFT_KEY = 'student-aid-application-draft-v1';
@@ -141,7 +150,9 @@ function niceDate(value: string | null | undefined) {
 }
 
 function applicationTypeLabel(type: ProgramType) {
-  return type === 'WORKING_SCHOLAR' ? 'Working Scholar Program' : 'Financial aid & scholarship';
+  if (type === 'WORKING_SCHOLAR') return 'Working Scholar Program';
+  if (type === 'ACADEMIC') return 'Academic Scholarship';
+  return 'Financial aid & scholarship';
 }
 
 const CATEGORY_LABELS: Record<ScholarshipCategory, string> = {
@@ -355,6 +366,7 @@ export function StudentWorkspace() {
       fetch('/api/student/profile'),
       fetch('/api/requirements?application_type=WORKING_SCHOLAR'),
       fetch('/api/requirements?application_type=FINANCIAL_AID'),
+      fetch('/api/requirements?application_type=ACADEMIC'),
       fetch('/api/student/applications'),
     ]);
     const failures: string[] = [];
@@ -387,7 +399,7 @@ export function StudentWorkspace() {
     }
     const allRequirements: Requirement[] = [];
     let requirementRequestsSucceeded = true;
-    for (const [index, source] of [[3, 'Working Scholar requirements'], [4, 'Financial Aid requirements']] as const) {
+    for (const [index, source] of [[3, 'Working Scholar requirements'], [4, 'Financial Aid requirements'], [5, 'Academic Scholarship requirements']] as const) {
       try {
         if (requests[index].status === 'rejected') throw requests[index].reason;
         const result = await readJson<{ requirements: Requirement[] }>(requests[index].value, source);
@@ -398,8 +410,8 @@ export function StudentWorkspace() {
       }
     }
     try {
-      if (requests[5].status === 'rejected') throw requests[5].reason;
-      const result = await readJson<{ hasActiveConflict: boolean }>(requests[5].value, 'Scholarship conflict check');
+      if (requests[6].status === 'rejected') throw requests[6].reason;
+      const result = await readJson<{ hasActiveConflict: boolean }>(requests[6].value, 'Scholarship conflict check');
       setHasActiveScholarshipConflict(result.hasActiveConflict);
       setConflictCheckLoaded(true);
     } catch (cause) {
@@ -709,6 +721,18 @@ export function StudentWorkspace() {
     }
   }
 
+  async function acknowledgeAcademicAward(awardId: string, applicationId: string) {
+    setError('');
+    setNotice('');
+    try {
+      await readJson(await fetch(`/api/academic/award/${awardId}`, { method: 'POST' }), 'Award acknowledgment');
+      setNotice('Award terms acknowledged.');
+      await loadDetails(applicationId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Award acknowledgment could not be saved.');
+    }
+  }
+
   async function loadMoreApplications() {
     const nextPage = applicationPage + 1;
     setMorePending(true);
@@ -994,7 +1018,7 @@ export function StudentWorkspace() {
               {application.status === 'FOR_FOLLOW_UP' && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Please review the administrator feedback below and contact the Scholarship Office for permitted next steps. Document uploads are enabled only while the application is pending.</p>}
               {application.review_remarks && <p className="mt-3 text-sm text-slate-700"><strong>Administrator feedback:</strong> {application.review_remarks}</p>}
               {application.denial_reason && <p className="mt-3 text-sm text-rose-700"><strong>Decision note:</strong> {application.denial_reason}</p>}
-              {detail?.application.id === application.id && <ApplicationDetails detail={detail} onOpenDocument={openDocument} />}
+              {detail?.application.id === application.id && <ApplicationDetails detail={detail} onOpenDocument={openDocument} onAcknowledgeAward={(awardId) => void acknowledgeAcademicAward(awardId, application.id)} />}
             </article>
           ))}
           {applications.length < applicationTotal && <button type="button" className="btn-secondary w-full" onClick={() => void loadMoreApplications()} disabled={morePending}>{morePending && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}Load older applications</button>}
@@ -1042,7 +1066,7 @@ export function StudentWorkspace() {
         <section className="space-y-4">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="font-bold text-slate-900">Application activity</h2><p className="mt-1 text-sm text-slate-600">Updates below come from your saved application status history and administrator follow-ups.</p></div>
           {applications.length === 0 && !loading ? <EmptyState message="Application updates will appear here after you submit an application." link="/student/programs" linkLabel="Explore scholarships" /> : applications.map((application) => (
-            <article key={application.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><div className="flex items-start gap-3"><span className="mt-1 rounded-full bg-sky-100 p-2 text-sky-900"><Bell className="h-4 w-4" /></span><div className="min-w-0 flex-1"><h2 className="font-semibold text-slate-900">{application.application_no} · {STATUS_LABELS[application.status] ?? application.status.replaceAll('_', ' ')}</h2><p className="mt-1 text-sm text-slate-600">Latest record update: {niceDate(application.updated_at)}</p>{application.review_remarks && <p className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{application.review_remarks}</p>}{application.denial_reason && <p className="mt-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{application.denial_reason}</p>}<button type="button" className="mt-3 text-sm font-semibold text-sky-800 hover:underline" onClick={() => void loadDetails(application.id)}>Load verified status history</button>{detail?.application.id === application.id && <ApplicationDetails detail={detail} compact onOpenDocument={openDocument} />}</div></div></article>
+            <article key={application.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><div className="flex items-start gap-3"><span className="mt-1 rounded-full bg-sky-100 p-2 text-sky-900"><Bell className="h-4 w-4" /></span><div className="min-w-0 flex-1"><h2 className="font-semibold text-slate-900">{application.application_no} · {STATUS_LABELS[application.status] ?? application.status.replaceAll('_', ' ')}</h2><p className="mt-1 text-sm text-slate-600">Latest record update: {niceDate(application.updated_at)}</p>{application.review_remarks && <p className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{application.review_remarks}</p>}{application.denial_reason && <p className="mt-2 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{application.denial_reason}</p>}<button type="button" className="mt-3 text-sm font-semibold text-sky-800 hover:underline" onClick={() => void loadDetails(application.id)}>Load verified status history</button>{detail?.application.id === application.id && <ApplicationDetails detail={detail} compact onOpenDocument={openDocument} onAcknowledgeAward={(awardId) => void acknowledgeAcademicAward(awardId, application.id)} />}</div></div></article>
           ))}
           {applications.length < applicationTotal && <button type="button" className="btn-secondary w-full" onClick={() => void loadMoreApplications()} disabled={morePending}>{morePending && <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />}Load older applications</button>}
           <p className="text-xs text-slate-500">Read/unread notifications are not enabled by the current database schema; no messages are fabricated here.</p>
@@ -1329,9 +1353,9 @@ function ProgramCard({ program, onApply, slots, requirements = [], eligibility, 
       {(program.opens_at || program.deadline) && <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600"><CalendarDays className="h-4 w-4 shrink-0 text-sky-800" />{program.opens_at ? `Opens ${niceDate(program.opens_at)}` : 'Opening date not configured'}{program.deadline ? ` · Deadline ${niceDate(program.deadline)}` : ''}</p>}
       {application && <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3"><p className="text-sm font-semibold text-sky-950">Your application: {STATUS_LABELS[application.status] ?? application.status.replaceAll('_', ' ')}</p><p className="mt-1 text-xs text-sky-900">Reference {application.application_no}</p></div>}
       {showDetails && <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
-        <div><h3 className="text-sm font-semibold text-slate-900">Complete eligibility</h3><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{eligibilityText}</p>{academic && <p className="mt-2 text-sm text-slate-700">Initial application: incoming first-year students before classes start; deadline is approximately one week before classes. Continuing scholars may continue up to fourth year if requirements are maintained, with no default annual re-application.</p>}</div>
-        <div><h3 className="text-sm font-semibold text-slate-900">Benefits</h3><p className="mt-1 text-sm text-slate-700">{academic ? '100% tuition coverage. Miscellaneous and other fees remain the student’s responsibility.' : program.benefits || 'Benefits have not been confirmed for this opportunity.'}</p></div>
-        <div><h3 className="text-sm font-semibold text-slate-900">Required documents</h3>{academic ? <ul className="mt-1 space-y-1 text-sm text-slate-700"><li>Report Card (required)</li><li>Ranking Certificate (required)</li><li>Birth Certificate (required)</li></ul> : program.requirements.length ? <ul className="mt-1 space-y-1 text-sm text-slate-700">{program.requirements.map((name) => <li key={name}>{name}</li>)}</ul> : requirements.length ? <ul className="mt-1 space-y-1 text-sm text-slate-700">{requirements.map((requirement) => <li key={requirement.id}>{requirement.name}{requirement.is_required ? ' (required)' : ' (optional)'}</li>)}</ul> : <p className="mt-1 text-sm text-slate-600">Requirements have not been configured.</p>}</div>
+        <div><h3 className="text-sm font-semibold text-slate-900">Complete eligibility</h3><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{eligibilityText}</p>{academic && <p className="mt-2 text-sm text-slate-700">Continuing scholars are monitored through semester reviews and do not submit a new application each year.</p>}</div>
+        <div><h3 className="text-sm font-semibold text-slate-900">Benefits</h3><p className="mt-1 text-sm text-slate-700">{program.benefits || 'Benefits have not been configured.'}</p></div>
+        <div><h3 className="text-sm font-semibold text-slate-900">Required documents</h3>{requirements.length ? <ul className="mt-1 space-y-1 text-sm text-slate-700">{requirements.map((requirement) => <li key={requirement.id}>{requirement.name}{requirement.is_required ? ' (required)' : ' (optional)'}</li>)}</ul> : <p className="mt-1 text-sm text-slate-600">Requirements have not been configured.</p>}</div>
         {program.application_type === 'WORKING_SCHOLAR' && <div><h3 className="text-sm font-semibold text-slate-900">Working Scholar availability and duties</h3><p className="mt-1 text-sm text-slate-700">{slots?.configured ? `${slots.remaining} of ${slots.max_slots} ${slots.uses_program_limit ? 'program' : 'schoolwide'} slots currently available.` : 'Working Scholar slots have not been configured.'}</p>{program.assigned_office && <p className="mt-1 text-sm text-slate-700">Work assignment: {program.assigned_office}</p>}<p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{program.description || 'Specific duties have not been provided for this program.'}</p><p className="mt-1 text-sm text-slate-600">Work schedule: Not specified.</p></div>}
         <div><h3 className="text-sm font-semibold text-slate-900">Application period</h3><p className="mt-1 text-sm text-slate-700">{program.opens_at || program.deadline ? `${program.opens_at ? niceDate(program.opens_at) : 'Opening date not configured'} – ${program.deadline ? niceDate(program.deadline) : 'Deadline not configured'}` : 'Application dates have not been configured.'}</p></div>
         <div><h3 className="text-sm font-semibold text-slate-900">Application procedure</h3><p className="mt-1 text-sm text-slate-700">Complete the online application, provide the requested information, upload the configured documents, review your details, and confirm submission.</p></div>
@@ -1355,13 +1379,29 @@ function DocumentList({ documents, requirements, onOpen }: {
   })}{requirements.filter((requirement) => requirement.is_required && !documents.some((document) => document.requirement_id === requirement.id)).map((requirement) => <li key={requirement.id} className="flex items-center justify-between gap-2 p-3 text-sm"><span className="flex items-center gap-2 text-slate-700"><Clock3 className="h-4 w-4 text-amber-700" />{requirement.name}</span><Pill color="amber">Not submitted</Pill></li>)}</ul>;
 }
 
-function ApplicationDetails({ detail, onOpenDocument, compact = false }: {
-  detail: ApplicationDetail; onOpenDocument: (id: string) => void; compact?: boolean;
+function ApplicationDetails({ detail, onOpenDocument, onAcknowledgeAward, compact = false }: {
+  detail: ApplicationDetail; onOpenDocument: (id: string) => void; onAcknowledgeAward: (id: string) => void; compact?: boolean;
 }) {
   return (
     <div className={`mt-5 border-t border-slate-100 pt-4 ${compact ? '' : 'grid gap-5 md:grid-cols-2'}`}>
       <section><h3 className="text-sm font-bold text-slate-900">Status history</h3>{detail.history.length ? <ol className="mt-3 space-y-3">{detail.history.map((entry) => <li key={entry.id} className="flex gap-3"><span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-600" /><div><p className="text-sm font-semibold text-slate-800">{STATUS_LABELS[entry.to_status] ?? entry.to_status.replaceAll('_', ' ')}</p><p className="text-xs text-slate-500">{niceDate(entry.created_at)}{entry.reason ? ` · ${entry.reason}` : ''}</p></div></li>)}</ol> : <p className="mt-2 text-sm text-slate-600">No status history has been recorded.</p>}</section>
       <section className="mt-4 md:mt-0"><h3 className="text-sm font-bold text-slate-900">Application documents</h3>{detail.documents.length ? <ul className="mt-2 space-y-2">{detail.documents.map((document) => <li key={document.id} className="flex items-center justify-between gap-2 text-sm"><span className="truncate text-slate-700">{document.file_name} · {document.review_status.replaceAll('_', ' ')}</span><button type="button" className="shrink-0 text-xs font-semibold text-sky-800 hover:underline" onClick={() => onOpenDocument(document.id)}>Open</button></li>)}</ul> : <p className="mt-2 text-sm text-slate-600">No documents uploaded.</p>}{detail.followUps.length > 0 && <div className="mt-4"><h3 className="text-sm font-bold text-slate-900">Follow-up requests</h3><ul className="mt-2 space-y-2">{detail.followUps.map((followUp) => <li key={followUp.id} className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">{followUp.message}<span className="mt-1 block text-xs">{followUp.status} · {niceDate(followUp.created_at)}</span></li>)}</ul></div>}</section>
+      {detail.academic && <section className="rounded-lg bg-sky-50 p-4 text-sm text-slate-800 md:col-span-2">
+        <h3 className="font-bold text-slate-900">Academic Scholarship progress</h3>
+        <p className="mt-2">Eligibility: {detail.academic.assessment?.result ?? 'Awaiting review'}{detail.academic.assessment?.gwa !== null && detail.academic.assessment?.gwa !== undefined ? ` · verified GWA ${detail.academic.assessment.gwa}` : ''}</p>
+        {detail.academic.assessment?.remarks && <p className="mt-1">{detail.academic.assessment.remarks}</p>}
+        {detail.academic.examination && <p className="mt-1">Examination: {detail.academic.examination.status}{detail.academic.examination.scheduled_at ? ` · ${niceDate(detail.academic.examination.scheduled_at)}` : ''}{detail.academic.examination.location ? ` · ${detail.academic.examination.location}` : ''}</p>}
+        {detail.academic.scholarship && <p className="mt-1">Scholar status: {detail.academic.scholarship.status}{detail.academic.scholarship.end_reason ? ` · ${detail.academic.scholarship.end_reason}` : ''}</p>}
+        {detail.academic.gradeReviews.length > 0 && <div className="mt-3"><p className="font-semibold">Semester grade monitoring</p>{detail.academic.gradeReviews.map((review, index) => <p key={`${review.academic_year}-${review.semester}-${index}`}>{review.academic_year} · {review.semester} · GWA {review.gwa ?? '—'} · {review.status}{review.remarks ? ` · ${review.remarks}` : ''}</p>)}</div>}
+        {detail.academic.enrollments.length > 0 && <div className="mt-3"><p className="font-semibold">Enrollment verification</p>{detail.academic.enrollments.map((record, index) => <p key={`${record.academic_year}-${record.semester}-${index}`}>{record.academic_year} · {record.semester} · {record.status}{record.remarks ? ` · ${record.remarks}` : ''}</p>)}</div>}
+        {detail.academic.award && <div className="mt-3 rounded-lg border border-sky-200 bg-white p-3">
+          <p className="font-semibold">Award terms · version {detail.academic.award.terms_version}</p>
+          <p className="mt-1 whitespace-pre-wrap">{detail.academic.award.terms_text}</p>
+          {detail.academic.award.acknowledged_at
+            ? <p className="mt-2 text-xs text-emerald-800">Acknowledged {niceDate(detail.academic.award.acknowledged_at)}</p>
+            : <button type="button" className="mt-3 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white" onClick={() => onAcknowledgeAward(detail.academic?.award?.id ?? '')}>Acknowledge award terms</button>}
+        </div>}
+      </section>}
     </div>
   );
 }

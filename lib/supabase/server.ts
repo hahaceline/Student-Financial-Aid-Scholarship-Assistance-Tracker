@@ -1,21 +1,36 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { getSupabaseEnv } from '@/lib/env';
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import type { CookieOptions } from "@supabase/ssr";
 
 export async function createClient() {
-  const env = getSupabaseEnv();
-  if (!env) throw new Error('Supabase environment variables are missing.');
   const cookieStore = await cookies();
-  return createServerClient(env.url, env.key, {
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase environment variables are missing.");
+  }
+
+  return createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(list: { name: string; value: string; options: CookieOptions }[]) {
+      setAll(
+        cookiesToSet: {
+          name: string;
+          value: string;
+          options: CookieOptions;
+        }[]
+      ) {
         try {
-          list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
         } catch {
-          // Called from a Server Component: the middleware refreshes the session instead.
+          // Cookies cannot be changed in Server Components.
+          // Middleware or a Server Action should refresh the session.
         }
       },
     },

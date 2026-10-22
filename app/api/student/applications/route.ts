@@ -68,8 +68,16 @@ export async function POST(request: NextRequest) {
   if (program.opens_at && program.opens_at > today) return jsonError('Applications for this program are not open yet.', 400);
   if (program.deadline && program.deadline < today) return jsonError('The application deadline for this program has passed.', 400);
 
-  const isAcademic = program.category === 'ACADEMIC' || /academic scholarship/i.test(program.name);
+  const isAcademic = program.application_type === 'ACADEMIC'
+    || program.category === 'ACADEMIC'
+    || /academic scholarship/i.test(program.name);
   if (isAcademic) {
+    const { count, error: requirementsError } = await auth.ctx.supabase.from('document_requirements')
+      .select('id', { count: 'exact', head: true })
+      .eq('application_type', 'ACADEMIC').eq('is_active', true).eq('is_required', true)
+      .or(`program_id.is.null,program_id.eq.${program.id}`);
+    if (requirementsError) return dbError(requirementsError, 'POST /api/student/applications: check Academic requirements configuration');
+    if (!count) return jsonError('Academic Scholarship applications are not open until the Academic Admin configures required documents.', 409);
     const course = parsed.data.course.toLocaleLowerCase().replace(/[^a-z]/g, '');
     if (!['bsed', 'beed', 'bssw'].includes(course)) {
       return jsonError('Academic Scholarship applications are limited to BS Ed, BE Ed, and BSSW. IT and HM are not eligible.', 422);

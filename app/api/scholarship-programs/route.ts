@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireApiRole } from '@/lib/auth/permissions';
 import { dbError, jsonError } from '@/lib/api';
 
+type ProgramType = 'WORKING_SCHOLAR' | 'FINANCIAL_AID' | 'ACADEMIC';
+function isProgramType(value: unknown): value is ProgramType {
+  return value === 'WORKING_SCHOLAR' || value === 'FINANCIAL_AID' || value === 'ACADEMIC';
+}
+
 export async function GET() {
-  const auth = await requireApiRole(['SUPER_ADMIN', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'STUDENT']);
+  const auth = await requireApiRole(['SUPER_ADMIN', 'ACADEMIC_ADMIN', 'WORKING_SCHOLAR_ADMIN', 'FINANCE_ADMIN', 'STUDENT']);
   if (auth.error) return auth.error;
   const { data, error } = await auth.ctx.supabase
     .from('scholarship_programs')
@@ -28,7 +33,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireApiRole(['SUPER_ADMIN', 'WORKING_SCHOLAR_ADMIN']);
+  const auth = await requireApiRole(['SUPER_ADMIN', 'ACADEMIC_ADMIN', 'WORKING_SCHOLAR_ADMIN']);
   if (auth.error) return auth.error;
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return jsonError('Invalid JSON body.', 400); }
@@ -41,7 +46,7 @@ export async function POST(request: NextRequest) {
   const assigned_office = body.assigned_office;
   const max_slots = body.max_slots;
   if (typeof name !== 'string' || name.trim().length < 3 || name.length > 120
-    || (application_type !== 'WORKING_SCHOLAR' && application_type !== 'FINANCIAL_AID')
+    || !isProgramType(application_type)
     || typeof description !== 'string' || description.length > 2000
     || typeof eligibility !== 'string' || eligibility.trim().length < 2 || eligibility.length > 2000
     || !Array.isArray(requirements) || requirements.length > 30
@@ -63,7 +68,7 @@ export async function POST(request: NextRequest) {
     return jsonError('Program slot limits are only available for Working Scholar opportunities.', 400);
   }
   if (opens_at && deadline && opens_at > deadline) return jsonError('The application opening date must be on or before the deadline.', 400);
-  if (application_type === 'FINANCIAL_AID' && category === 'WORKING_SCHOLAR') {
+  if (application_type !== 'WORKING_SCHOLAR' && category === 'WORKING_SCHOLAR') {
     return jsonError('Working Scholar category must use the Working Scholar application type.', 400);
   }
   if (application_type === 'WORKING_SCHOLAR' && category !== undefined && category !== 'WORKING_SCHOLAR' && category !== 'OTHER_INTERNAL') {
@@ -71,6 +76,19 @@ export async function POST(request: NextRequest) {
   }
   if (auth.ctx.profile.role === 'WORKING_SCHOLAR_ADMIN' && application_type !== 'WORKING_SCHOLAR') {
     return jsonError('Working Scholar Admin can only manage Working Scholar programs.', 403);
+  }
+  if (auth.ctx.profile.role === 'ACADEMIC_ADMIN' && application_type !== 'ACADEMIC') {
+    return jsonError('Academic Admin can only manage Academic Scholarship programs.', 403);
+  }
+  if (application_type === 'ACADEMIC') {
+    if (requirements.length === 0) return jsonError('Add the institution-approved program requirements before creating this opportunity.', 400);
+    if (is_active) {
+      const { count, error: requirementsError } = await auth.ctx.supabase.from('document_requirements')
+        .select('id', { count: 'exact', head: true })
+        .eq('application_type', 'ACADEMIC').eq('is_required', true).eq('is_active', true).is('program_id', null);
+      if (requirementsError) return dbError(requirementsError);
+      if (!count) return jsonError('Configure at least one active, required Academic document before opening applications.', 409);
+    }
   }
   const resolvedCategory = application_type === 'WORKING_SCHOLAR' ? 'WORKING_SCHOLAR' : category;
   const { data, error } = await auth.ctx.supabase.from('scholarship_programs').insert({
