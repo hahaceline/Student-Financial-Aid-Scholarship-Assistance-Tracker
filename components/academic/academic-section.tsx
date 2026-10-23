@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { ExaminationManager } from '@/components/academic/examination-manager';
 
 type Row = Record<string, unknown>;
 type SectionResponse = { rows: Row[]; rules?: Row | null };
@@ -53,7 +54,9 @@ export function AcademicSection({ section }: { section: string }) {
     }
   }, [section]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (section !== 'examinations') void load();
+  }, [load, section]);
 
   const columns = useMemo(() => {
     const row = data.rows[0];
@@ -155,6 +158,8 @@ export function AcademicSection({ section }: { section: string }) {
 
   const rules = data.rules;
   const title = TITLES[section] ?? 'Academic workspace';
+
+  if (section === 'examinations') return <ExaminationManager />;
 
   return (
     <main className="space-y-6">
